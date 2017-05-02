@@ -2,7 +2,7 @@ package tink.sql;
 
 
 import tink.sql.Expr;
-import tink.streams.Stream;
+import tink.streams.*;
 import tink.sql.Table;
 
 using tink.CoreApi;
@@ -36,20 +36,14 @@ class Dataset<Fields, Filter, Result:{}, Db> {
     return cnx.selectAll(target, condition);
     
   //TODO: add order
-  public function first():Surprise<Result, Error> 
-    return all() >> function (r:Array<Result>) return switch r {
+  public function first():Promise<Result> 
+    return all().next(function (r) return switch r {
       case []: Failure(new Error(NotFound, 'The requested item was not found'));
       case v: Success(v[v.length - 1]);
-    }
-    
-  public function all():Surprise<Array<Result>, Error>
-    return Future.async(function (cb) {
-      var ret = [];
-      stream().forEach(function (result) {
-        ret.push(result);
-        return true;
-      }).handle(function (o) cb(o.map(function (_) return ret)));
     });
+    
+  public function all():Promise<Array<Result>>
+    return stream().collect();
   
   @:noCompletion 
   static public function get<Fields, Filter, Result:{}, Db>(v:Dataset<Fields, Filter, Result, Db>) {
