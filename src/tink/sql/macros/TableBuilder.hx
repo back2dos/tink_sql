@@ -103,6 +103,9 @@ class TableBuilder {
                       var maxLength = 12; // TODO: make these configurable
                       macro tink.sql.Info.DataType.DInt($v{maxLength}, false, $v{f.meta.has(':autoIncrement')});
                     
+                    case Context.followWithAbstracts(_).getID() => 'String':
+                      var maxLength = (1 << 24) - 1;
+                      macro tink.sql.Info.DataType.DString($v{maxLength});
                     case TAbstract(_.get() => {name: name, type: type}, _):
                       switch type {
                         case TAbstract(_.get() => {name: core, meta: meta}, _) if(meta.has(':coreType')):
