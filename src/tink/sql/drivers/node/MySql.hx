@@ -22,14 +22,15 @@ class MySql implements Driver {
   }
   
   public function open<Db:DatabaseInfo>(name:String, info:Db):Connection<Db> {
-    var cnx = NativeDriver.createConnection({
+    var cnx = NativeDriver.createPool({
       user: settings.user,
       password: settings.password,
       host: settings.host,
       port: settings.port,
       database: name,
+      connectionLimit: 3,
     });
-    //cnx.release(); //TODO: this doesn't work. Make it autorelease somehow
+    
     return new MySqlConnection(info, cnx);
   }  
 }
@@ -68,11 +69,11 @@ class MySqlConnection<Db:DatabaseInfo> implements Connection<Db> implements Sani
     });
   }
   
-  public function selectAll<A:{}>(t:Target<A, Db>, ?c:Condition, ?limit:Limit):RealStream<A>
+  public function selectAll<A:{}>(t:Target<A, Db>, ?c:Condition, ?limit:Limit, ?orderBy:OrderBy<A>):RealStream<A>
     return Stream.promise(Future.async(function (cb) {
       cnx.query( 
         { 
-          sql: Format.selectAll(t, c, this), 
+          sql: Format.selectAll(t, c, this, limit, orderBy), 
           nestTables: !t.match(TTable(_, _)),
           typeCast: function (field, next):Dynamic {
             return switch field.type {
@@ -86,6 +87,37 @@ class MySqlConnection<Db:DatabaseInfo> implements Connection<Db> implements Sani
                   case null: null;
                   case v: v != '0';
                 } 
+              case 'GEOMETRY':
+                var v:Dynamic = field.geometry();
+                // https://github.com/mysqljs/mysql/blob/310c6a7d1b2e14b63b572dbfbfa10128f20c6d52/lib/protocol/Parser.js#L342-L389
+                if(v == null) {
+                  null;
+                } else {
+                    if(Std.is(v, Array)) {
+                      if(Std.is(v[0], Array)) {
+                        if(Std.is(v[0][0], Array)) {
+                          new geojson.MultiPolygon(
+                            [for(polygon in (v:Array<Dynamic>))
+                              [for(line in (polygon:Array<Dynamic>))
+                                [for(point in (line:Array<Dynamic>))
+                                  new geojson.util.Coordinates(point.y, point.x)
+                                ]
+                              ]
+                            ]
+                          );
+                        } else {
+                          // Polygon
+                          throw 'Polygon parsing not implemented';
+                        }
+                      } else {
+                        // Line
+                        throw 'Line parsing not implemented';
+                      }
+                    } else {
+                      // Point
+                      new geojson.Point(v.y, v.x);
+                    }
+                }
               default:
                 next();
             }
@@ -126,11 +158,22 @@ class MySqlConnection<Db:DatabaseInfo> implements Connection<Db> implements Sani
       );
     }));
   
+  public function countAll<A:{}>(t:Target<A, Db>, ?c:Condition):Promise<Int> {
+    return Future.async(function (cb) {
+      cnx.query(
+        { sql: Format.countAll(t, c, this) },
+        function (error, result: Array<{count: Int}>) cb(switch [error, result] {
+          case [null, [{count: count}]]: Success(count);
+          case [e, _]: toError(e);
+        })
+      );
+    });
+  }
   
   function toError<A>(error:js.Error):Outcome<A, Error>
     return Failure(Error.withData(error.message, error));//TODO: give more information
   
-  public function insert<Row:{}>(table:TableInfo<Row>, items:Array<Insert<Row>>):Promise<Id<Row>>
+  public function insert<Row:{}>(table:TableInfo<Row>, items:Array<Insert<Row>>):Promise<Id<Row>> 
     return Future.async(function (cb) {
       cnx.query(
         { sql: Format.insert(table, items, this) }, 
@@ -152,17 +195,29 @@ class MySqlConnection<Db:DatabaseInfo> implements Connection<Db> implements Sani
         })
       );
     });
+        
+  public function delete<Row:{}>(table:TableInfo<Row>, ?c:Condition, ?max:Int):Promise<{rowsAffected:Int}>
+    return Future.async(function (cb) {
+      cnx.query(
+        { sql: Format.delete(table, c, max, this) },
+        function (error, result: { changedRows: Int } ) cb(switch [error, result] {
+          case [null, { changedRows: id }]: Success({ rowsAffected: id });
+          case [e, _]: toError(e);
+        })
+      );
+    });
 }
 
 @:jsRequire("mysql")
 private extern class NativeDriver {
   static function escape(value:Any):String;
   static function escapeId(ident:String):String;
-  static function createConnection(config:Config):NativeConnection;
+  static function createPool(config:Config):NativeConnection;
 }
 
 private typedef Config = {>MySqlSettings,
   public var database(default, null):String;
+  @:optional public var connectionLimit(default, null):Int;
 }
 
 private typedef NativeConnection = {

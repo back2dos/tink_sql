@@ -34,9 +34,12 @@ enum KeyType {
 enum DataType {
   DBool;
   DInt(bits:Int, signed:Bool, autoIncrement:Bool);
+  DFloat(bits:Int);
   DString(maxLength:Int);
   DBlob(maxLength:Int);
   DDateTime;
+  DPoint; // geojson
+  DMultiPolygon; // geojson
 }
 
 typedef Insert<Row> = Row;

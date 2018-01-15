@@ -19,7 +19,9 @@ class Run {
     
     Runner.run(TestBatch.make([
       new TypeTest(),
-      new FormatTest(),
+      #if nodejs new FormatTest(), #end
+      new GeometryTest(),
+      new ExprTest(),
       new Run(),
     ])).handle(Runner.exit);
     
@@ -64,7 +66,7 @@ class Run {
   
   public function info() {
     asserts.assert(db.name == 'test');
-    asserts.assert(sorted(db.tablesnames()).join(',') == 'Post,PostTags,Types,User');
+    asserts.assert(sorted(db.tablesnames()).join(',') == 'Geometry,Post,PostTags,Types,User');
     asserts.assert(sorted(db.tableinfo('Post').fieldnames()).join(',') == 'author,content,id,title');
     return asserts.done();
   }
@@ -79,12 +81,20 @@ class Run {
   public function insert()
     return insertUsers().next(function(insert:Int) return assert(insert > 0));
   
-  @:variant(target.db.User.all, 5)
-  @:variant(target.db.User.where(User.name == 'Evan').all, 0)
-  @:variant(target.db.User.where(User.name == 'Alice').all, 1)
-  @:variant(target.db.User.where(User.name == 'Dave').all, 2)
+  @:variant(target.db.User.all.bind(), 5)
+  @:variant(target.db.User.where(User.name == 'Evan').all.bind(), 0)
+  @:variant(target.db.User.where(User.name == 'Alice').all.bind(), 1)
+  @:variant(target.db.User.where(User.name == 'Dave').all.bind(), 2)
   public function insertedCount<T>(query:Lazy<Promise<Array<T>>>, expected:Int)
     return insertUsers().next(function(_) return count(query.get(), expected, asserts));
+
+  @:variant(target.db.User.count.bind(), 5)
+  @:variant(target.db.User.where(User.name == 'Evan').count.bind(), 0)
+  @:variant(target.db.User.where(User.name == 'Alice').count.bind(), 1)
+  @:variant(target.db.User.where(User.name == 'Dave').count.bind(), 2)
+  public function insertedCountAll<T>(count:Lazy<Promise<Int>>, expected:Int)
+    return insertUsers().next(function(_) return count.get())
+      .next(function(total) return assert(total == expected));
   
   public function update() {
     await(runUpdate, asserts);
@@ -113,7 +123,7 @@ class Run {
       asserts.assert((@:await db.PostTags.join(db.Post).on(PostTags.post == Post.id && PostTags.tag == 'off-topic').all()).length == 2);
       asserts.assert((@:await db.PostTags.join(db.Post).on(PostTags.post == Post.id && PostTags.tag == 'test').all()).length == 3);
       
-      var update = @:await db.User.update(function (u) return [u.name.set(EConst('Donald'))], { where: function (u) return u.name == 'Dave' } );
+      var update = @:await db.User.update(function (u) return [u.name.set('Donald')], { where: function (u) return u.name == 'Dave' } );
       asserts.assert(update.rowsAffected == 2);
       
       return Noise;

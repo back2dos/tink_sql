@@ -22,12 +22,30 @@ class FormatTest {
 	
 	@:variant(new FormatTest.FakeTable1(), 'CREATE TABLE `fake` (`id` INT(11) UNSIGNED NOT NULL AUTO_INCREMENT, `username` VARCHAR(50) NOT NULL, `admin` TINYINT(1) NOT NULL, `age` INT(11) UNSIGNED NULL)')
 	@:variant(target.db.User, 'CREATE TABLE `User` (`email` VARCHAR(50) NOT NULL, `id` INT(12) UNSIGNED NOT NULL AUTO_INCREMENT, `name` VARCHAR(50) NOT NULL, PRIMARY KEY (`id`))')
-	@:variant(target.db.Types, 'CREATE TABLE `Types` (`blob` BLOB NOT NULL, `boolFalse` TINYINT(1) NOT NULL, `boolTrue` TINYINT(1) NOT NULL, `date` DATETIME NOT NULL, `int` INT(21) UNSIGNED NOT NULL, `nullBlob` BLOB NULL, `nullBool` TINYINT(1) NULL, `nullDate` DATETIME NULL, `nullInt` INT(21) UNSIGNED NULL, `nullText` VARCHAR(40) NULL, `optionalBlob` BLOB NULL, `optionalBool` TINYINT(1) NULL, `optionalDate` DATETIME NULL, `optionalInt` INT(21) UNSIGNED NULL, `optionalText` VARCHAR(40) NULL, `text` VARCHAR(40) NOT NULL)')
+	@:variant(target.db.Types, 'CREATE TABLE `Types` (`abstractBool` TINYINT(1) NULL, `abstractDate` DATETIME NULL, `abstractFloat` FLOAT(1) NULL, `abstractInt` INT(1) UNSIGNED NULL, `abstractString` VARCHAR(255) NULL, `blob` BLOB NOT NULL, `boolFalse` TINYINT(1) NOT NULL, `boolTrue` TINYINT(1) NOT NULL, `date` DATETIME NOT NULL, `enumAbstractBool` TINYINT(1) NULL, `enumAbstractFloat` FLOAT(1) NULL, `enumAbstractInt` INT(1) UNSIGNED NULL, `enumAbstractString` VARCHAR(255) NULL, `float` FLOAT(21) NOT NULL, `int` INT(21) UNSIGNED NOT NULL, `nullBlob` BLOB NULL, `nullBool` TINYINT(1) NULL, `nullDate` DATETIME NULL, `nullInt` INT(21) UNSIGNED NULL, `nullText` VARCHAR(40) NULL, `optionalBlob` BLOB NULL, `optionalBool` TINYINT(1) NULL, `optionalDate` DATETIME NULL, `optionalInt` INT(21) UNSIGNED NULL, `optionalText` VARCHAR(40) NULL, `text` VARCHAR(40) NOT NULL)')
 	public function createTable(table:TableInfo<Dynamic>, sql:String) {
 		// TODO: should separate out the sanitizer
 		return assert(Format.createTable(table, sanitizer) == sql);
 	}
 	
+	public function like() {
+		var dataset = db.Types.where(Types.text.like('mystring'));
+		return assert(Format.selectAll(@:privateAccess dataset.target, @:privateAccess dataset.condition, sanitizer) == 'SELECT * FROM `Types` WHERE (`Types`.`text` LIKE \'mystring\')');
+	}
+	
+	public function inArray() {
+		var dataset = db.Types.where(Types.int.inArray([1, 2, 3]));
+		return assert(Format.selectAll(@:privateAccess dataset.target, @:privateAccess dataset.condition, sanitizer) == 'SELECT * FROM `Types` WHERE (`Types`.`int` IN (1, 2, 3))');
+	}
+	
+	public function inEmptyArray() {
+		var dataset = db.Types.where(Types.int.inArray([]));
+		return assert(Format.selectAll(@:privateAccess dataset.target, @:privateAccess dataset.condition, sanitizer) == 'SELECT * FROM `Types` WHERE false');
+	}
+	
+	public function orderBy() {
+		var dataset = db.Types;
+		return assert(Format.selectAll(@:privateAccess dataset.target, @:privateAccess dataset.condition, sanitizer, {limit: 1, offset: 0}, [{field: db.Types.fields.int, order: Desc}]) == 'SELECT * FROM `Types` ORDER BY `Types`.`int` DESC LIMIT 1 OFFSET 0');
 	}
 	
 	// https://github.com/haxetink/tink_sql/issues/10

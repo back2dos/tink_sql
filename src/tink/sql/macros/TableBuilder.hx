@@ -55,7 +55,7 @@ class TableBuilder {
               
               fieldsExprFields.push({
                 field: f.name,
-                expr: macro new tink.sql.Expr.Field($v{name}, $v{f.name}),
+                expr: macro new tink.sql.Expr.Field(tableName, $v{f.name}),
               });
               
               fieldsValues.push({
@@ -64,23 +64,37 @@ class TableBuilder {
                 
                 function resolveType(type:haxe.macro.Type) {
                   return switch type {
-                    case TType(_.get() => {pack: [], name: 'Null'}, [p]):
+                    case TType(_.get() => {pack: [], name: 'Null'}, [p]),
+                         TAbstract(_.get() => {pack: [], name: 'Null'}, [p]):
                       nullable = true;
                       resolveType(p);
-                    case TType(_.get() => {pack: ['tink', 'sql', 'types'], name: 'Integer'}, p):
+                    case TType(_.get() => {module: 'tink.sql.types.Integer'}, p):
                       var maxLength = getInt(p[0], f.pos);
                       macro tink.sql.Info.DataType.DInt($v{maxLength}, false, $v{f.meta.has(':autoIncrement')});
                     
-                    case TType(_.get() => {pack: ['tink', 'sql', 'types'], name: 'Text'}, p):
+                    case TType(_.get() => {module: 'tink.sql.types.Number'}, p):
+                      var maxLength = getInt(p[0], f.pos);
+                      macro tink.sql.Info.DataType.DFloat($v{maxLength});
+                    
+                    case TType(_.get() => {module: 'tink.sql.types.Text'}, p):
                       var maxLength = getInt(p[0], f.pos);
                       macro tink.sql.Info.DataType.DString($v{maxLength});
                     
-                    case TType(_.get() => {pack: ['tink', 'sql', 'types'], name: 'Blob'}, p):
+                    case TType(_.get() => {module: 'tink.sql.types.Blob'}, p):
                       var maxLength = getInt(p[0], f.pos);
                       macro tink.sql.Info.DataType.DBlob($v{maxLength});
                     
-                    case TType(_.get() => {pack: ['tink', 'sql', 'types'], name: 'DateTime'}, p):
+                    case TType(_.get() => {module: 'tink.sql.types.DateTime'}, _):
                       macro tink.sql.Info.DataType.DDateTime;
+                      
+                    case _.getID() => 'Date': // should merge with the prev case: https://github.com/HaxeFoundation/haxe/issues/6327
+                      macro tink.sql.Info.DataType.DDateTime;
+                    
+                    case TType(_.get() => {module: 'tink.sql.types.Point'}, p):
+                      macro tink.sql.Info.DataType.DPoint;
+                    
+                    case TType(_.get() => {module: 'tink.sql.types.MultiPolygon'}, p):
+                      macro tink.sql.Info.DataType.DMultiPolygon;
                     
                     case _.getID() => 'Bool':
                       macro tink.sql.Info.DataType.DBool;
@@ -89,6 +103,14 @@ class TableBuilder {
                       var maxLength = 12; // TODO: make these configurable
                       macro tink.sql.Info.DataType.DInt($v{maxLength}, false, $v{f.meta.has(':autoIncrement')});
                     
+                    case TAbstract(_.get() => {name: name, type: type}, _):
+                      switch type {
+                        case TAbstract(_.get() => {name: core, meta: meta}, _) if(meta.has(':coreType')):
+                          f.pos.error('$core as underlying type for the abstract $name is unsupported. Use types from the tink.sql.types package.');
+                        default:
+                          resolveType(type);
+                      }
+                      
                     case _.getID() => v:
                       if(v == null) v = Std.string(type);
                       f.pos.error('Unsupported type $v. Use types from the tink.sql.types package.');
@@ -113,13 +135,12 @@ class TableBuilder {
               });
             }
             
-            var filterType = (macro function ($name:$fieldsType):tink.sql.Expr.Condition return tink.sql.Expr.ExprData.EConst(true)).typeof().sure().toComplex({ direct: true });
+            var filterType = (macro function ($name:$fieldsType):tink.sql.Expr.Condition return tink.sql.Expr.ExprData.EValue(true, tink.sql.Expr.ValueType.VBool)).typeof().sure().toComplex({ direct: true });
             
             macro class $cName<Db> extends tink.sql.Table.TableSource<$fieldsType, $filterType, $rowType, Db> {
               
-              public function new(cnx) {                
-                  
-                super(cnx, new tink.sql.Table.TableName($v{name}), ${EObjectDecl(fieldsExprFields).at(ctx.pos)});
+              public function new(cnx, tableName) {                
+                super(cnx, new tink.sql.Table.TableName(tableName), ${EObjectDecl(fieldsExprFields).at(ctx.pos)});
               }
               
               static var FIELD_NAMES = $v{names};
